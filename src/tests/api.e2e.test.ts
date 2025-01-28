@@ -22,7 +22,6 @@ describe('Webinar Routes E2E', () => {
       // Arrange
       const prisma = fixture.getPrismaClient();
       const server = fixture.getServer();
-
       const webinar = await prisma.webinar.create({
         data: {
           id: 'test-webinar',
@@ -42,7 +41,6 @@ describe('Webinar Routes E2E', () => {
 
       // Assert
       expect(response.body).toEqual({ message: 'Seats updated' });
-
       const updatedWebinar = await prisma.webinar.findUnique({
         where: { id: webinar.id },
       });
@@ -66,7 +64,6 @@ describe('Webinar Routes E2E', () => {
       // Arrange
       const prisma = fixture.getPrismaClient();
       const server = fixture.getServer();
-
       const webinar = await prisma.webinar.create({
         data: {
           id: 'test-webinar',
@@ -74,7 +71,7 @@ describe('Webinar Routes E2E', () => {
           seats: 10,
           startDate: new Date(),
           endDate: new Date(),
-          organizerId: 'different-user', // Different from test-user in the route
+          organizerId: 'different-user',
         },
       });
 
@@ -86,6 +83,102 @@ describe('Webinar Routes E2E', () => {
 
       expect(response.body).toEqual({
         error: 'User is not allowed to update this webinar',
+      });
+    });
+  });
+
+  describe('POST /webinars', () => {
+    const getFutureDate = (daysFromNow: number) => {
+      const date = new Date();
+      date.setDate(date.getDate() + daysFromNow);
+      return date.toISOString();
+    };
+
+    it('should create a new webinar', async () => {
+      // Arrange
+      const server = fixture.getServer();
+      const prisma = fixture.getPrismaClient();
+
+      const webinarData = {
+        title: 'E2E Test Webinar',
+        seats: 100,
+        startDate: getFutureDate(4),
+        endDate: getFutureDate(4),
+      };
+
+      // Act
+      const response = await supertest(server)
+        .post('/webinars')
+        .send(webinarData)
+        .expect(201);
+
+      // Assert
+      expect(response.body).toHaveProperty('id');
+
+      const createdWebinar = await prisma.webinar.findUnique({
+        where: { id: response.body.id },
+      });
+
+      expect(createdWebinar).toMatchObject({
+        title: webinarData.title,
+        seats: webinarData.seats,
+        startDate: new Date(webinarData.startDate),
+        endDate: new Date(webinarData.endDate),
+        organizerId: 'test-user',
+      });
+    });
+
+    it('should return 400 when date is too soon', async () => {
+      const server = fixture.getServer();
+
+      const response = await supertest(server)
+        .post('/webinars')
+        .send({
+          title: 'Too Soon Webinar',
+          seats: 100,
+          startDate: getFutureDate(1),
+          endDate: getFutureDate(1),
+        })
+        .expect(400);
+
+      expect(response.body).toEqual({
+        error: 'Webinar must be scheduled at least 3 days in advance',
+      });
+    });
+
+    it('should return 400 when trying to create webinar with no seats', async () => {
+      const server = fixture.getServer();
+
+      const response = await supertest(server)
+        .post('/webinars')
+        .send({
+          title: 'Invalid Webinar',
+          seats: 0,
+          startDate: getFutureDate(4),
+          endDate: getFutureDate(4),
+        })
+        .expect(400);
+
+      expect(response.body).toEqual({
+        error: 'Webinar must have at least 1 seat',
+      });
+    });
+
+    it('should return 400 when creating webinar with too many seats', async () => {
+      const server = fixture.getServer();
+
+      const response = await supertest(server)
+        .post('/webinars')
+        .send({
+          title: 'Too Many Seats',
+          seats: 1001,
+          startDate: getFutureDate(4),
+          endDate: getFutureDate(4),
+        })
+        .expect(400);
+
+      expect(response.body).toEqual({
+        error: 'Webinar must have at most 1000 seats',
       });
     });
   });
