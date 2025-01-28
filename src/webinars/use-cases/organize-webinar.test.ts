@@ -1,16 +1,16 @@
 import { FixedDateGenerator } from 'src/core/adapters/fixed-date-generator';
 import { FixedIdGenerator } from 'src/core/adapters/fixed-id-generator';
-import { IDateGenerator } from 'src/core/ports/date-generator.interface';
-import { IIdGenerator } from 'src/core/ports/id-generator.interface';
-import { InMemoryWebinarRepository } from 'src/webinars/adapters/webinar-repository.in-memory';
-import { Webinar } from 'src/webinars/entities/webinar.entity';
+import { PrismaWebinarRepository } from 'src/webinars/adapters/webinar-repository.prisma';
 import { OrganizeWebinars } from 'src/webinars/use-cases/organize-webinar';
+import { TestServerFixture } from 'src/tests/fixtures';
+import { Webinar } from 'src/webinars/entities/webinar.entity';
 
 describe('Feature: Organize webinars', () => {
-  let repository: InMemoryWebinarRepository;
-  let idGenerator: IIdGenerator;
+  let fixture: TestServerFixture;
+  let repository: PrismaWebinarRepository;
   let useCase: OrganizeWebinars;
-  let dateGenerator: IDateGenerator;
+  let dateGenerator: FixedDateGenerator;
+  let idGenerator: FixedIdGenerator;
 
   const payload = {
     userId: 'user-alice-id',
@@ -20,46 +20,55 @@ describe('Feature: Organize webinars', () => {
     endDate: new Date('2024-01-10T11:00:00.000Z'),
   };
 
-  function expectWebinarToEqual(webinar: Webinar) {
-    expect(webinar).toEqual({
-      props: {
-        id: 'id-1',
-        organizerId: 'user-alice-id',
-        title: 'Webinar title',
-        startDate: new Date('2024-01-10T10:00:00.000Z'),
-        endDate: new Date('2024-01-10T11:00:00.000Z'),
-        seats: 100,
-      },
-      initialState: {
-        id: 'id-1',
-        organizerId: 'user-alice-id',
-        title: 'Webinar title',
-        startDate: new Date('2024-01-10T10:00:00.000Z'),
-        endDate: new Date('2024-01-10T11:00:00.000Z'),
-        seats: 100,
-      },
+  async function expectWebinarToEqual(webinarId: string, expectedWebinar: any) {
+    const webinar = await fixture.getPrismaClient().webinar.findUnique({
+      where: { id: webinarId },
     });
+    expect(webinar).toEqual(expectedWebinar);
   }
 
-  beforeEach(() => {
-    repository = new InMemoryWebinarRepository();
+  async function expectNoWebinarInDatabase() {
+    const webinarCount = await fixture.getPrismaClient().webinar.count();
+    expect(webinarCount).toBe(0);
+  }
+
+  beforeAll(async () => {
+    fixture = new TestServerFixture();
+    await fixture.init();
+  });
+
+  beforeEach(async () => {
+    await fixture.reset();
+    const prismaClient = fixture.getPrismaClient();
+    repository = new PrismaWebinarRepository(prismaClient);
+    dateGenerator = new FixedDateGenerator(
+      new Date('2024-01-01T00:00:00.000Z'),
+    );
     idGenerator = new FixedIdGenerator();
-    dateGenerator = new FixedDateGenerator();
     useCase = new OrganizeWebinars(repository, idGenerator, dateGenerator);
+  });
+
+  afterAll(async () => {
+    await fixture.stop();
   });
 
   describe('Scenario: happy path', () => {
     it('should create a webinar', async () => {
       const result = await useCase.execute(payload);
-
       expect(result).toEqual({ id: 'id-1' });
     });
 
     it('should insert a new webinar in the repository', async () => {
       await useCase.execute(payload);
 
-      const createdWebinar = repository.database[0];
-      expectWebinarToEqual(createdWebinar);
+      await expectWebinarToEqual('id-1', {
+        id: 'id-1',
+        organizerId: 'user-alice-id',
+        title: 'Webinar title',
+        startDate: new Date('2024-01-10T10:00:00.000Z'),
+        endDate: new Date('2024-01-10T11:00:00.000Z'),
+        seats: 100,
+      });
     });
   });
 
@@ -83,7 +92,7 @@ describe('Feature: Organize webinars', () => {
         await useCase.execute(payload);
       } catch (error) {}
 
-      expect(repository.database).toEqual([]);
+      await expectNoWebinarInDatabase();
     });
   });
 
@@ -107,7 +116,7 @@ describe('Feature: Organize webinars', () => {
         await useCase.execute(payload);
       } catch (error) {}
 
-      expect(repository.database).toEqual([]);
+      await expectNoWebinarInDatabase();
     });
   });
 
@@ -131,7 +140,7 @@ describe('Feature: Organize webinars', () => {
         await useCase.execute(payload);
       } catch (error) {}
 
-      expect(repository.database).toEqual([]);
+      await expectNoWebinarInDatabase();
     });
   });
 });
